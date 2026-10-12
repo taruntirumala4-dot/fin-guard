@@ -1,0 +1,132 @@
+# ============================================================
+#  FinGuard – Application Configuration
+#  Profiles: default (local dev with MySQL/SQL), docker
+# ============================================================
+
+spring:
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+
+  application:
+    name: finguard-backend
+
+  # ─── Relational Database (SQL / JPA) ───────────────────
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/finguard?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&useUnicode=true&characterEncoding=UTF-8}
+    username: ${SPRING_DATASOURCE_USERNAME:finguard}
+    password: ${SPRING_DATASOURCE_PASSWORD:finguard_secret}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    database-platform: org.hibernate.dialect.MySQLDialect
+
+  # ─── Redis ─────────────────────────────────────────────
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+
+  # ─── Kafka ───────────────────────────────────────────────
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      retries: 3
+      properties:
+        spring.json.add.type.headers: false
+    consumer:
+      group-id: finguard-transaction-consumer
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.finguard.*"
+
+  # ─── Jackson ─────────────────────────────────────────────
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    time-zone: UTC
+
+# ─── Server ──────────────────────────────────────────────
+server:
+  port: ${SERVER_PORT:8080}
+  error:
+    include-message: never      # Never expose internal error messages
+    include-stacktrace: never
+
+# ─── Logging ─────────────────────────────────────────────
+logging:
+  level:
+    com.finguard: INFO
+    org.springframework.kafka: WARN
+    org.springframework.security: WARN
+    org.hibernate.SQL: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+# ─── Application Custom Properties ───────────────────────
+finguard:
+  jwt:
+    secret: ${JWT_SECRET:finguard_jwt_secret_change_me_in_production_must_be_at_least_256_bits_long_for_HS256}
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+
+  ml-service:
+    url: ${ML_SERVICE_URL:http://localhost:8000}
+    timeout-seconds: 5
+
+  fraud:
+    # Score thresholds
+    safe-threshold: 30
+    suspicious-threshold: 60
+    # Rule weights
+    high-amount-score: 30
+    rapid-transaction-score: 25
+    location-mismatch-score: 30
+    velocity-score: 20
+    device-change-score: 15
+    # Rule parameters
+    high-amount-threshold: 100000
+    rapid-transaction-window-minutes: 2
+    rapid-transaction-count: 5
+    velocity-threshold-per-hour: 10
+    # Score combination weights
+    rule-weight: 0.4
+    ml-weight: 0.6
+
+  redis:
+    ttl:
+      transaction-seconds: 1800       # 30 minutes
+      user-transactions-seconds: 600  # 10 minutes
+      dashboard-stats-seconds: 300    # 5 minutes
+      fraud-alerts-seconds: 300       # 5 minutes
+
+# ─── SpringDoc / Swagger ──────────────────────────────────
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+
+# ─── Actuator (Health checks) ─────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized

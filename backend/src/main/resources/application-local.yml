@@ -1,0 +1,90 @@
+# ============================================================
+#  FinGuard – LOCAL Development Profile
+#  Usage: mvn spring-boot:run -Dspring-boot.run.profiles=local
+#
+#  Replaces Docker dependencies with in-memory equivalents:
+#    MySQL  → H2 in-memory database
+#    Kafka  → disabled (listeners don't auto-start)
+#    Redis  → localhost (non-fatal if not available)
+# ============================================================
+
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
+
+  # ─── H2 In-Memory Database (replaces MySQL) ──────────────
+  datasource:
+    url: jdbc:h2:mem:finguard;DB_CLOSE_DELAY=-1;MODE=MySQL;NON_KEYWORDS=VALUE
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    open-in-view: false
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+  # ─── Kafka – disable listeners so app starts without Kafka ──
+  kafka:
+    bootstrap-servers: localhost:29092
+    listener:
+      auto-startup: false        # ← Kafka listeners won't start
+    admin:
+      fail-fast: false           # ← Won't crash if Kafka is unreachable
+
+  # ─── Redis – short timeout, non-fatal connection failure ────
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
+      timeout: 200ms             # Short timeout so it fails fast
+      lettuce:
+        pool:
+          max-active: 2
+          max-idle: 2
+          min-idle: 0
+
+# ─── ML Service – local FastAPI (optional, won't crash if down) ──
+finguard:
+  ml-service:
+    url: http://localhost:8000
+    timeout-seconds: 2           # Fast timeout if ML service is offline
+
+  fraud:
+    safe-threshold: 30
+    suspicious-threshold: 60
+    high-amount-score: 30
+    rapid-transaction-score: 25
+    location-mismatch-score: 30
+    velocity-score: 20
+    device-change-score: 15
+    high-amount-threshold: 100000
+    rapid-transaction-window-minutes: 2
+    rapid-transaction-count: 5
+    velocity-threshold-per-hour: 10
+    rule-weight: 0.4
+    ml-weight: 0.6
+
+  redis:
+    ttl:
+      transaction-seconds: 1800
+      user-transactions-seconds: 600
+      dashboard-stats-seconds: 300
+      fraud-alerts-seconds: 300
+
+# ─── Logging ────────────────────────────────────────────────
+logging:
+  level:
+    com.finguard: DEBUG
+    org.springframework.kafka: ERROR
+    org.springframework.data.redis: ERROR
+    org.hibernate.SQL: DEBUG

@@ -1,0 +1,90 @@
+# ============================================================
+# FinGuard – .gitignore
+# ============================================================
+
+# Environment files – NEVER commit real secrets
+.env
+*.env
+!.env.example
+
+# ─── Java / Maven ───────────────────────────────────────────
+target/
+*.class
+*.jar
+*.war
+*.ear
+.mvn/
+mvnw
+mvnw.cmd
+*.iml
+.idea/
+*.iws
+.classpath
+.project
+.settings/
+
+# ─── Python ─────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+env/
+ENV/
+pip-log.txt
+pip-delete-this-directory.txt
+*.egg-info/
+dist/
+build/
+*.egg
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+.mypy_cache/
+
+# ─── Node / React ────────────────────────────────────────────
+node_modules/
+dist/
+build/
+.cache/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ─── ML Model artefacts ─────────────────────────────────────
+# Keep fraud_model.pkl in version control (pre-trained)
+# ml-service/model/fraud_model.pkl   <-- intentionally tracked
+
+# ─── Docker ─────────────────────────────────────────────────
+.dockerignore
+
+# ─── OS ─────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# ─── Logs ────────────────────────────────────────────────────
+logs/
+*.log
+spring.log
+
+# ─── Database ────────────────────────────────────────────────
+*.sql.bak
+pgdata/
+
+# ─── IDE ─────────────────────────────────────────────────────
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

@@ -1,0 +1,183 @@
+# ============================================================
+#  FinGuard – Docker Compose
+#  Starts: MySQL 5.5 · Redis · Zookeeper · Kafka
+#          Spring Boot Backend · Python ML Service · React Frontend
+#
+#  Usage:  docker compose up --build
+# ============================================================
+
+version: "3.9"
+
+services:
+
+  # ─── MySQL 5.5 ───────────────────────────────────────────────
+  mysql:
+    image: mysql:5.5
+    container_name: finguard-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DB:-finguard}
+      MYSQL_USER: ${MYSQL_USER:-finguard}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-finguard_secret}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_secret}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./database/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${MYSQL_USER:-finguard}", "-p${MYSQL_PASSWORD:-finguard_secret}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - finguard-network
+
+  # ─── Redis ──────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: finguard-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - finguard-network
+
+  # ─── Zookeeper (required by Kafka) ──────────────────────────
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: finguard-zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc localhost 2181 | grep imok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - finguard-network
+
+  # ─── Apache Kafka ────────────────────────────────────────────
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: finguard-kafka
+    restart: unless-stopped
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server kafka:9092 --list"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - finguard-network
+
+  # ─── Python ML Service ──────────────────────────────────────
+  ml-service:
+    build:
+      context: ./ml-service
+      dockerfile: Dockerfile
+    container_name: finguard-ml
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    networks:
+      - finguard-network
+
+  # ─── Spring Boot Backend ─────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: ../docker/backend.Dockerfile
+    container_name: finguard-backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      ml-service:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DB:-finguard}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&useUnicode=true&characterEncoding=UTF-8
+      SPRING_DATASOURCE_USERNAME: ${MYSQL_USER:-finguard}
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-finguard_secret}
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      ML_SERVICE_URL: http://ml-service:8000
+      JWT_SECRET: ${JWT_SECRET:-finguard_jwt_secret_change_me_in_production_at_least_256_bits_long}
+      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-86400000}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/api/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - finguard-network
+
+  # ─── React Frontend ──────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../docker/frontend.Dockerfile
+      args:
+        VITE_API_BASE_URL: http://localhost:8080
+    container_name: finguard-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3000:80"
+    networks:
+      - finguard-network
+
+volumes:
+  mysql_data:
+  redis_data:
+
+networks:
+  finguard-network:
+    driver: bridge
