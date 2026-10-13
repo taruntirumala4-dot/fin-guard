@@ -1,5 +1,8 @@
 package com.finguard.service;
 
+import com.finguard.aws.CloudWatchService;
+import com.finguard.aws.SNSService;
+import com.finguard.aws.SQSService;
 import com.finguard.dto.FraudAlertResponse;
 import com.finguard.exception.ResourceNotFoundException;
 import com.finguard.fraud.FraudRuleEngine;
@@ -10,11 +13,13 @@ import com.finguard.redis.RedisService;
 import com.finguard.repository.FraudAlertRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -39,6 +44,19 @@ public class AlertService {
 
     private final FraudAlertRepository fraudAlertRepository;
     private final RedisService redisService;
+
+    /** Optional AWS services – null when aws.enabled=false (local dev) */
+    @Autowired(required = false)
+    @Nullable
+    private SNSService snsService;
+
+    @Autowired(required = false)
+    @Nullable
+    private SQSService sqsService;
+
+    @Autowired(required = false)
+    @Nullable
+    private CloudWatchService cloudWatchService;
 
     @Value("${finguard.redis.ttl.fraud-alerts-seconds:300}")
     private long fraudAlertsTtlSeconds;
@@ -71,6 +89,31 @@ public class AlertService {
 
         // Invalidate recent alerts cache
         redisService.evict(RedisKeyGenerator.recentFraudAlertsKey());
+
+        // ─── AWS: SNS notification (HIGH + CRITICAL only) ─────────
+        if (snsService != null) {
+            snsService.publishFraudAlert(saved, transaction.getTransactionId(), transaction.getAmount());
+        }
+
+        // ─── AWS: SQS fan-out to downstream consumers ─────────────
+        if (sqsService != null) {
+            java.util.Map<String, Object> alertPayload = java.util.Map.of(
+                "alertId",       saved.getId(),
+                "transactionId", transaction.getTransactionId(),
+                "alertType",     saved.getAlertType(),
+                "severity",      saved.getSeverity().name(),
+                "fraudScore",    finalScore,
+                "amount",        transaction.getAmount(),
+                "userId",        transaction.getUserId() != null ? transaction.getUserId() : "",
+                "timestamp",     java.time.Instant.now().toString()
+            );
+            sqsService.publishFraudAlertEvent(alertPayload);
+        }
+
+        // ─── AWS: CloudWatch metric ────────────────────────────────
+        if (cloudWatchService != null) {
+            cloudWatchService.recordFraudAlert(severity.name());
+        }
 
         return saved;
     }

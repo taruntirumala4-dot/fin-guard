@@ -1,5 +1,6 @@
 package com.finguard.service;
 
+import com.finguard.aws.SQSService;
 import com.finguard.dto.TransactionRequest;
 import com.finguard.dto.TransactionResponse;
 import com.finguard.exception.ResourceNotFoundException;
@@ -13,11 +14,13 @@ import com.finguard.repository.TransactionRepository;
 import com.finguard.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -47,6 +50,11 @@ public class TransactionService {
     private final TransactionProducer transactionProducer;
     private final RedisService redisService;
     private final FraudDetectionService fraudDetectionService;
+
+    /** Optional AWS SQS – null when aws.enabled=false */
+    @Autowired(required = false)
+    @Nullable
+    private SQSService sqsService;
 
     @Value("${finguard.redis.ttl.transaction-seconds:1800}")
     private long transactionTtlSeconds;
@@ -96,6 +104,11 @@ public class TransactionService {
             .build();
 
         transactionProducer.publishTransaction(event);
+
+        // ─── AWS SQS: Publish to external transactions queue for downstream consumers
+        if (sqsService != null) {
+            sqsService.publishExternalTransactionEvent(event);
+        }
 
         // Evaluate fraud rules and ML score synchronously for instant feedback
         try {

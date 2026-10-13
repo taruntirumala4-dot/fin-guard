@@ -1,5 +1,7 @@
 package com.finguard.service;
 
+import com.finguard.aws.CloudWatchService;
+import com.finguard.aws.LambdaService;
 import com.finguard.fraud.FraudRuleEngine;
 import com.finguard.kafka.TransactionEvent;
 import com.finguard.model.FraudResult;
@@ -9,7 +11,9 @@ import com.finguard.redis.RedisService;
 import com.finguard.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
@@ -45,6 +49,15 @@ public class FraudDetectionService {
     private final RedisService redisService;
     private final WebClient.Builder webClientBuilder;
 
+    /** Optional AWS services – null when aws.enabled=false (local dev) */
+    @Autowired(required = false)
+    @Nullable
+    private LambdaService lambdaService;
+
+    @Autowired(required = false)
+    @Nullable
+    private CloudWatchService cloudWatchService;
+
     @Value("${finguard.ml-service.url}")
     private String mlServiceUrl;
 
@@ -78,6 +91,7 @@ public class FraudDetectionService {
             return;
         }
 
+        long startMs = System.currentTimeMillis();
         log.info("Starting fraud analysis for: {}", transaction.getTransactionId());
 
         // Step 1: Rule engine
@@ -88,29 +102,43 @@ public class FraudDetectionService {
         double mlProbability = callMlService(transaction, ruleResult);
         double mlScore = mlProbability * 100;
 
-        // Step 3: Combined score
-        double finalScore = (ruleResult.ruleScore() * ruleWeight) + (mlScore * mlWeight);
-        finalScore = Math.min(finalScore, 100.0);
+        // Step 3: Combined score (rule engine + ML)
+        double combinedScore = (ruleResult.ruleScore() * ruleWeight) + (mlScore * mlWeight);
+        combinedScore = Math.min(combinedScore, 100.0);
 
-        // Step 4: Determine fraud status
+        // Step 4: Lambda enrichment (geo-IP, device reputation, merchant risk)
+        //         Optional – degrades gracefully when AWS is offline
+        double finalScore = enrichWithLambda(event, combinedScore);
+
+        // Step 5: Determine fraud status
         Transaction.FraudStatus fraudStatus = determineFraudStatus(finalScore);
         Transaction.TransactionStatus txStatus = determineTxStatus(fraudStatus);
 
-        // Step 5: Update transaction
+        // Step 6: Update transaction
         transaction.setFraudScore(BigDecimal.valueOf(finalScore).setScale(2, RoundingMode.HALF_UP));
         transaction.setFraudStatus(fraudStatus);
         transaction.setStatus(txStatus);
         transactionRepository.save(transaction);
 
-        log.info("Transaction {} analyzed: score={} status={}",
-            transaction.getTransactionId(), finalScore, fraudStatus);
+        long processingMs = System.currentTimeMillis() - startMs;
+        log.info("Transaction {} analyzed: score={} status={} durationMs={}",
+            transaction.getTransactionId(), finalScore, fraudStatus, processingMs);
 
-        // Step 6: Create alert for suspicious/fraud
+        // Step 7: Create alert for suspicious/fraud
         if (fraudStatus != Transaction.FraudStatus.SAFE) {
             alertService.createAlert(transaction, ruleResult, finalScore);
         }
 
-        // Step 7: Cache the updated transaction
+        // Step 8: Publish CloudWatch metrics
+        if (cloudWatchService != null) {
+            cloudWatchService.recordTransactionProcessed(
+                finalScore,
+                fraudStatus == Transaction.FraudStatus.FRAUD,
+                processingMs
+            );
+        }
+
+        // Step 9: Cache invalidation
         redisService.evict(RedisKeyGenerator.transactionKey(transaction.getTransactionId()));
         redisService.evict(RedisKeyGenerator.dashboardStatsKey());
         redisService.evict(RedisKeyGenerator.recentFraudAlertsKey());
@@ -180,6 +208,20 @@ public class FraudDetectionService {
 
         // Fallback: return 0.5 (neutral) if ML service is unreachable
         return 0.5;
+    }
+
+    /**
+     * Optionally enriches the combined fraud score via Lambda.
+     * Returns combinedScore unchanged if Lambda is disabled or unavailable.
+     */
+    private double enrichWithLambda(TransactionEvent event, double combinedScore) {
+        if (lambdaService == null) return combinedScore;
+        try {
+            return lambdaService.invokeFraudEnrichment(event, combinedScore);
+        } catch (Throwable ex) {
+            log.warn("Lambda enrichment failed, using combinedScore={}: {}", combinedScore, ex.getMessage());
+            return combinedScore;
+        }
     }
 
     // ─── Helpers ──────────────────────────────────────────────

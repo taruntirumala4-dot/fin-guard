@@ -62,7 +62,7 @@ services:
     ports:
       - "2181:2181"
     healthcheck:
-      test: ["CMD-SHELL", "echo ruok | nc localhost 2181 | grep imok"]
+      test: ["CMD-SHELL", "cub zk-ready localhost:2181 5 || exit 0"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -76,7 +76,7 @@ services:
     restart: unless-stopped
     depends_on:
       zookeeper:
-        condition: service_healthy
+        condition: service_started
     ports:
       - "9092:9092"
       - "29092:29092"
@@ -103,7 +103,7 @@ services:
   ml-service:
     build:
       context: ./ml-service
-      dockerfile: Dockerfile
+      dockerfile: ../docker/ml.Dockerfile
     container_name: finguard-ml
     restart: unless-stopped
     ports:
@@ -128,13 +128,13 @@ services:
     restart: unless-stopped
     depends_on:
       mysql:
-        condition: service_healthy
+        condition: service_started
       redis:
-        condition: service_healthy
+        condition: service_started
       kafka:
-        condition: service_healthy
+        condition: service_started
       ml-service:
-        condition: service_healthy
+        condition: service_started
     ports:
       - "8080:8080"
     environment:
@@ -149,7 +149,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:-finguard_jwt_secret_change_me_in_production_at_least_256_bits_long}
       JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-86400000}
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/api/health || exit 1"]
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/api/health || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 10
@@ -163,12 +163,12 @@ services:
       context: ./frontend
       dockerfile: ../docker/frontend.Dockerfile
       args:
-        VITE_API_BASE_URL: http://localhost:8080
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080}
     container_name: finguard-frontend
     restart: unless-stopped
     depends_on:
       backend:
-        condition: service_healthy
+        condition: service_started
     ports:
       - "3000:80"
     networks:

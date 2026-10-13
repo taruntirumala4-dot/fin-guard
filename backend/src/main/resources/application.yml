@@ -130,3 +130,12 @@ management:
   endpoint:
     health:
       show-details: when-authorized
+
+# ─── AWS ─────────────────────────────────────────────────────
+aws:
+  enabled: ${AWS_ENABLED:false}
+  region: ${AWS_REGION:ap-southeast-2}
+  access-key-id: ${AWS_ACCESS_KEY_ID:}
+  secret-access-key: ${AWS_SECRET_ACCESS_KEY:}
+  s3:
+    bucket-name: ${AWS_S3_BUCKET:finguard-documents}

@@ -17,11 +17,11 @@ USER mluser
 ENV PATH="/home/mluser/.local/bin:${PATH}"
 
 # Install Python dependencies
-COPY requirements.txt .
+COPY --chown=mluser:mluser requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 # Copy application code
-COPY . .
+COPY --chown=mluser:mluser . .
 
 EXPOSE 8000
 
