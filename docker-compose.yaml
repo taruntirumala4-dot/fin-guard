@@ -148,6 +148,11 @@ services:
       ML_SERVICE_URL: http://ml-service:8000
       JWT_SECRET: ${JWT_SECRET:-finguard_jwt_secret_change_me_in_production_at_least_256_bits_long}
       JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-86400000}
+      AWS_ENABLED: ${AWS_ENABLED:-false}
+      AWS_REGION: ${AWS_REGION:-ap-southeast-2}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-finguard-documents}
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/api/health || exit 1"]
       interval: 15s

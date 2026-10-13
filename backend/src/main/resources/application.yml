@@ -138,4 +138,21 @@ aws:
   access-key-id: ${AWS_ACCESS_KEY_ID:}
   secret-access-key: ${AWS_SECRET_ACCESS_KEY:}
   s3:
+    bucket: ${AWS_S3_BUCKET:finguard-documents}
     bucket-name: ${AWS_S3_BUCKET:finguard-documents}
+    reports-prefix: ${AWS_S3_REPORTS_PREFIX:reports/}
+    backups-prefix: ${AWS_S3_BACKUPS_PREFIX:backups/}
+    audit-prefix: ${AWS_S3_AUDIT_PREFIX:audit/}
+    presigned-url-expiry-minutes: ${AWS_S3_PRESIGNED_EXPIRY_MINUTES:60}
+  sqs:
+    external-transactions-queue-url: ${AWS_SQS_TX_URL:}
+    fraud-alerts-queue-url: ${AWS_SQS_ALERTS_URL:}
+    dlq-url: ${AWS_SQS_DLQ_URL:}
+    report-jobs-queue-url: ${AWS_SQS_REPORTS_URL:}
+  sns:
+    fraud-alerts-topic-arn: ${AWS_SNS_FRAUD_ARN:}
+    system-alerts-topic-arn: ${AWS_SNS_SYSTEM_ARN:}
+  kms:
+    key-id: ${AWS_KMS_KEY_ID:}
+    key-alias: ${AWS_KMS_KEY_ALIAS:alias/finguard-data-key}
+

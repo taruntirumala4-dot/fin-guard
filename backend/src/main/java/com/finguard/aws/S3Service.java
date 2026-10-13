@@ -41,7 +41,7 @@ public class S3Service {
     private final S3Client s3Client;
     private final S3Presigner s3Presigner;
 
-    @Value("${aws.s3.bucket}")
+    @Value("${aws.s3.bucket:${aws.s3.bucket-name:finguard-documents}}")
     private String bucketName;
 
     @Value("${aws.s3.reports-prefix:reports/}")
@@ -59,6 +59,25 @@ public class S3Service {
     public S3Service(S3Client s3Client, S3Presigner s3Presigner) {
         this.s3Client = s3Client;
         this.s3Presigner = s3Presigner;
+    }
+
+    /**
+     * Verifies connectivity and access to the configured S3 bucket.
+     * @return true if bucket exists and is accessible, false otherwise
+     */
+    public boolean testConnection() {
+        try {
+            s3Client.headBucket(HeadBucketRequest.builder().bucket(bucketName).build());
+            log.info("S3 connection test successful: bucket={}", bucketName);
+            return true;
+        } catch (Throwable ex) {
+            log.error("S3 connection test failed for bucket {}: {}", bucketName, ex.getMessage());
+            return false;
+        }
+    }
+
+    public String getBucketName() {
+        return bucketName;
     }
 
     // ─── Upload ────────────────────────────────────────────────────
