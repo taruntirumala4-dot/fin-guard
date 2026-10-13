@@ -95,6 +95,42 @@ public class StorageController {
     }
 
     /**
+     * Test endpoint that generates and uploads a sample transaction audit report to S3.
+     * Allows immediate verification of S3 write permissions from a browser or curl.
+     */
+    @GetMapping("/test-upload")
+    public ResponseEntity<Map<String, Object>> uploadTestReport() {
+        if (s3Service.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(Map.of("error", "S3 service is not active. Verify that aws.enabled=true in your configuration."));
+        }
+
+        try {
+            String timestamp = java.time.Instant.now().toString();
+            String sampleCsv = "transaction_id,timestamp,amount,currency,status,risk_score,decision\n"
+                + "TXN-DEMO-001," + timestamp + ",1250.00,USD,FLAGGED,0.88,FRAUD_ALERT\n"
+                + "TXN-DEMO-002," + timestamp + ",45.00,USD,APPROVED,0.05,ALLOW\n"
+                + "TXN-DEMO-003," + timestamp + ",9800.00,USD,BLOCKED,0.95,BLOCK\n";
+
+            String fileName = "sample-audit-report-" + System.currentTimeMillis() + ".csv";
+            String key = s3Service.get().uploadReport(sampleCsv.getBytes(java.nio.charset.StandardCharsets.UTF_8), fileName);
+            URL presignedUrl = s3Service.get().generatePresignedUrl(key);
+
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("success", true);
+            response.put("message", "Sample audit report successfully uploaded to S3!");
+            response.put("bucket", bucketName);
+            response.put("key", key);
+            response.put("presignedDownloadUrl", presignedUrl.toString());
+            return ResponseEntity.ok(response);
+        } catch (Throwable ex) {
+            log.error("Failed to upload test report to S3: {}", ex.getMessage(), ex);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("error", "Upload to S3 failed: " + ex.getMessage()));
+        }
+    }
+
+    /**
      * Uploads a file directly to the S3 bucket.
      */
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
